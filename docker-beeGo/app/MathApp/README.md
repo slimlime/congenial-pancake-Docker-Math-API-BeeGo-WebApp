@@ -1,8 +1,9 @@
 # Setup
 
 
-# Run:
+# Run Docker Dev:
 
+Removes itself when instance shut down. Port 8080 map path.... Probably should've done this properly...
 ```bash
 docker run -it --rm --name ma-instance -p 8080:8080 -v /Users/slim/abs-app-dir/docker-beeGo/app/MathApp:/go/src/MathApp -w /go/src/MathApp ma-image
 ```
