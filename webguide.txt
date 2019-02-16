@@ -1,0 +1,851 @@
+
+Product
+Docker
+Pricing
+Documentation
+Tutorials
+Blog
+Sign In
+Get our next Docker tutorial right in your inbox
+
+
+Enter your email…
+  Subscribe
+×
+
+Search tutorials
+Explore tags
+RSSRSS
+All tutorials
+Earn up to $200
+
+	
+Kulshekhar Kabra Apr 14, 2016 Updated on Nov 27, 2018 18 comments Tagged as Docker Go DevOps
+Tweet
+How To Deploy a Go Web Application with Docker
+Get familiar with how Docker can improve the way you build, test and deploy Go web applications, and see how you can use Semaphore for continuous deployment.
+
+Introduction
+While most Go applications compile to a single binary, web applications can also have template and configuration files. Whenever there are a lot of files in a project, errors can arise due to some of them being out of sync and create a lot of issues.
+
+In this tutorial, you will learn how to deploy a Go web application with Docker, and how Docker can help improve your development workflow and deployment process. Teams of all sizes can benefit from the setup described below.
+
+Goals
+By the end of this article, you will:
+
+Have a basic understanding of Docker,
+Find out how Docker can help you while developing a Go application,
+Learn how to create a Docker container for a Go application for production, and
+Know how to continuously deploy a Docker container to your server using Semaphore.
+
+
+Prerequisites
+For this tutorial, you will need:
+
+Docker installed on your machine and on your server, and
+A server that can authenticate SSH requests using an SSH Key.
+Understanding Docker
+Docker helps you create a single deployable unit for your application. This unit, also called a container, contains everything required for the application. This includes the code (or binary), runtime, system tools and system libraries. Packing all the requirements into a single unit ensures an identical environment for the application, wherever it is deployed. This can also help in maintaining identical development and production setups that are difficult to track.
+
+Once up, the creation and deployment of the container can be automated. This eliminates a whole class of issues. Most of these issues arise due to files being out of sync or due to differences in the development and production environments. Docker helps resolve these issues.
+
+Advantages over Virtual Machines
+Containers offer similar resource allocation and isolation benefits as virtual machines. However, the similarity ends there.
+
+A virtual machine needs its own guest operating system while a container shares the kernel of the host operating system. This means that containers are much lighter and need fewer resources. A virtual machine is, in essence, an operating system within an operating system. Containers, on the other hand, are just like any other application in the system. Basically, containers need fewer resources (memory, disk space, etc.) than virtual machines, and have much faster start-up times than virtual machines.
+
+Benefits of Docker During Development
+Some of the benefits of using Docker in development include:
+
+A standard development environment used by all team members,
+Updating dependencies centrally and using the same container everywhere,
+An identical environment in development to that of production, and
+Fixing potential problems that might appear only in production.
+Why Use Docker with a Go Web Application?
+Most Go applications are simple binaries. This begs the question - why use Docker with a Go application? Some of the reasons to use Docker with Go include:
+
+Web applications typically have template and configuration files. Docker helps keep these files in sync with the binary.
+Docker ensures identical setups in development and production. There are times when an application works in development, but not in production. Using Docker frees you from having to worry about problems like these.
+Machines, operating systems and installed software can vary significantly across a large team. Docker provides a mechanism to ensure a consistent development setup. This makes teams more productive and reduces friction and avoidable issues during development.
+Creating a Simple Go Web Application
+We'll create a simple web application in Go for demonstration in this article. This application, which we'll call MathApp, will:
+
+Expose routes for different mathematical operations,
+Use HTML templates for views,
+Use a configuration file to customize the application, and
+Include tests for selected functions.
+Visiting /sum/3/6 will show a page with the result of adding 3 and 6. Likewise, visiting /product/3/6 will show a page with the product of 3 and 6.
+
+In this article we used the Beego framework. Note that you can use any framework (or none at all) for your application.
+
+Final Directory Structure
+Upon completion, the directory structure of MathApp will look like:
+
+MathApp
+├── conf
+│   └── app.conf
+├── main.go
+├── main_test.go
+└── views
+    ├── invalid-route.html
+    └── result.html
+We will assume that the MathApp directory is located in the /app directory.
+
+The main application file is main.go, located at the root of the application. This file contains all the functionality of the app. Some of the functionality from main.go is tested using main_test.go.
+
+The views folder contains the view files invalid-route.html and result.html. The configuration file app.conf is placed in the conf folder. Beego uses this file to customize the application.
+
+Application File Contents
+The main application file (main.go) contains all the application logic. The contents of this file are as follows:
+
+// main.go
+
+package main
+
+import (
+    "strconv"
+
+    "github.com/astaxie/beego"
+)
+
+// The main function defines a single route, its handler
+// and starts listening on port 8080 (default port for Beego)
+func main() {
+    /* This would match routes like the following:
+/sum/3/5
+/product/6/23
+...
+*/
+    beego.Router("/:operation/:num1:int/:num2:int", &mainController{})
+    beego.Run()
+}
+
+// This is the controller that this application uses
+type mainController struct {
+    beego.Controller
+}
+
+// Get() handles all requests to the route defined above
+func (c *mainController) Get() {
+    //Obtain the values of the route parameters defined in the route above
+    operation := c.Ctx.Input.Param(":operation")
+    num1, _ := strconv.Atoi(c.Ctx.Input.Param(":num1"))
+    num2, _ := strconv.Atoi(c.Ctx.Input.Param(":num2"))
+
+    //Set the values for use in the template
+    c.Data["operation"] = operation
+    c.Data["num1"] = num1
+    c.Data["num2"] = num2
+    c.TplName = "result.html"
+
+    // Perform the calculation depending on the 'operation' route parameter
+    switch operation {
+    case "sum":
+        c.Data["result"] = add(num1, num2)
+    case "product":
+        c.Data["result"] = multiply(num1, num2)
+    default:
+        c.TplName = "invalid-route.html"
+    }
+}
+
+func add(n1, n2 int) int {
+    return n1 + n2
+}
+
+func multiply(n1, n2 int) int {
+    return n1 * n2
+}
+In your application, this might be split across several files. However, for the purpose of this tutorial, we have kept things simple.
+
+Test File Contents
+The main.go file has some functions which need to be tested. The tests for these functions can be found in main_test.go. The contents of this file are as follows:
+
+// main_test.go
+
+package main
+
+import "testing"
+
+func TestSum(t *testing.T) {
+    if add(2, 5) != 7 {
+        t.Fail()
+    }
+    if add(2, 100) != 102 {
+        t.Fail()
+    }
+    if add(222, 100) != 322 {
+        t.Fail()
+    }
+}
+
+func TestProduct(t *testing.T) {
+    if multiply(2, 5) != 10 {
+        t.Fail()
+    }
+    if multiply(2, 100) != 200 {
+        t.Fail()
+    }
+    if multiply(222, 3) != 666 {
+        t.Fail()
+    }
+}
+Testing your application is particularly useful if you want to do continuous deployment. If you have adequate testing in place, then you can deploy continuously without worrying about introducing errors in your application.
+
+View Files Contents
+The view files are HTML templates. These are used by the application to display the response to a request. The content of result.html is as follows:
+
+<!-- result.html -->
+<!-- This file is used to display the result of calculations -->
+<!doctype html>
+<html>
+
+    <head>
+        <title>MathApp - {{.operation}}</title>
+    </head>
+
+    <body>
+        The {{.operation}} of {{.num1}} and {{.num2}} is {{.result}}
+    </body>
+
+</html>
+The content of invalid-route.html is as follows:
+
+<!-- invalid-route.html -->
+<!-- This file is used when an invalid operation is specified in the route -->
+<!doctype html>
+<html>
+
+    <head>
+        <title>MathApp</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta charset="UTF-8">
+    </head>
+
+    <body>
+        Invalid operation
+    </body>
+
+</html>
+Configuration File Contents
+The app.conf file is used by Beego to configure the application. Its content is as follows:
+
+; app.conf
+appname = MathApp
+httpport = 8080
+runmode = dev
+In this file,
+
+appname is the name of the process that the application will run as,
+httpport is the port on which the application will be served, and
+runmode specifies which mode the application should run in. Valid values include dev for development and prod for production.
+Using Docker During Development
+This section will explain the benefits of using Docker during development, and walk you through the steps required to use Docker in development.
+
+Configuring Docker for Development
+We'll use a Dockerfile to configure Docker for development. The setup should satisfy the following requirements for the development environment:
+
+We will use the application mentioned in the previous section,
+The files should be accessible both from inside and outside of the container,
+We will use the bee tool that comes with beego. This will be used to live reload the app (inside the Docker container) during development,
+Docker will expose the application on port 8080,
+On our machine, the application is located at /app/MathApp,
+In the Docker container, the application is located at /go/src/MathApp,
+The name of the Docker image we'll create for development will be ma-image, and
+The name of the Docker container we'll run during development will be ma-instance.
+Step 1 - Creating the Dockerfile
+
+The following Dockerfile should satisfy the above requirements:
+
+FROM golang:1.6
+
+# Install beego and the bee dev tool
+RUN go get github.com/astaxie/beego && go get github.com/beego/bee
+
+# Expose the application on port 8080
+EXPOSE 8080
+
+# Set the entry point of the container to the bee command that runs the
+# application and watches for changes
+CMD ["bee", "run"]
+The first line,
+
+FROM golang:1.6
+uses the official image for Go as the base image. This image comes with Go 1.6 pre-installed. This image has the value of $GOPATH set to /go. All packages installed in /go/src will be accessible to the go command.
+
+The second line,
+
+RUN go get github.com/astaxie/beego && go get github.com/beego/bee
+installs the beego package and the bee tool. The beego package is for use from within the application. The bee tool will be used to live reload our code during development.
+
+The third line,
+
+EXPOSE 8080
+exposes the application on port 8080 from the container on the development machine. The final line,
+
+CMD ["bee", "run"]
+uses the bee command to start live reloading our application.
+
+Step 2 - Building the Image
+
+Once the Docker file is created, run the following command to create the image:
+
+docker build -t ma-image .
+Executing the above command will create an image named ma-image. This image can now be used by everyone working on this application. This will ensure that an identical development environment is used across the team.
+
+To see the list of images on your system, run the following command:
+
+docker images
+Executing this command should result in something similar to the following:
+
+REPOSITORY  TAG     IMAGE ID      CREATED         SIZE
+ma-image    latest  8d53aa0dd0cb  31 seconds ago  784.7 MB
+golang      1.6     22a6ecf1f7cc  5 days ago      743.9 MB
+Note that the exact names and number of images might vary. However, you should see at least the golang and ma-image images in the list.
+
+Step 3 - Running the Container
+
+Once you have ma-image, you can start a container using the command:
+
+docker run -it --rm --name ma-instance -p 8080:8080 \
+   -v /app/MathApp:/go/src/MathApp -w /go/src/MathApp ma-image
+Let's break down the above command to see what it does.
+
+The docker run command is used to run a container from an image,
+The -it flag starts the container in an interactive mode,
+The --rm flag cleans out the container after it shuts down,
+The --name ma-instance names the container ma-instance,
+The -p 8080:8080 flag allows the container to be accessed at port 8080,
+The -v /app/MathApp:/go/src/MathApp is more involved. It maps /app/MathApp from the machine to /go/src/MathApp in the container. This makes the development files available inside and outside the container, and
+The ma-image part specifies the image name to use in the container.
+Executing the above command starts the Docker container. This container exposes your application on port 8080. It also rebuilds your application automatically whenever you make a change. You should see the following output in your console:
+
+bee   :1.4.1
+beego :1.6.1
+Go    :go version go1.6 linux/amd64
+
+2016/04/10 13:04:15 [INFO] Uses 'MathApp' as 'appname'
+2016/04/10 13:04:15 [INFO] Initializing watcher...
+2016/04/10 13:04:15 [TRAC] Directory(/go/src/MathApp)
+2016/04/10 13:04:15 [INFO] Start building...
+2016/04/10 13:04:18 [SUCC] Build was successful
+2016/04/10 13:04:18 [INFO] Restarting MathApp ...
+2016/04/10 13:04:18 [INFO] ./MathApp is running...
+2016/04/10 13:04:18 [asm_amd64.s:1998][I] http server Running on :8080
+To check the setup, visit http://localhost:8080/sum/4/5 in your browser. You should see something similar to the following:
+
+
+
+Note: This assumes that you're working on your local machine.
+
+Step 4 - Developing the Application
+
+Now, let's see how this helps us during development. Make sure to keep the container running while performing the following actions. In the main.go file, change line #34 from
+
+c.Data["operation"] = operation
+to
+
+c.Data["operation"] =  "real " + operation
+The moment you save the changes, you should see something like the following:
+
+2016/04/10 13:17:51 [EVEN] "/go/src/MathApp/main.go": MODIFY
+2016/04/10 13:17:51 [SKIP] "/go/src/MathApp/main.go": MODIFY
+2016/04/10 13:17:52 [INFO] Start building...
+2016/04/10 13:17:56 [SUCC] Build was successful
+2016/04/10 13:17:56 [INFO] Restarting MathApp ...
+2016/04/10 13:17:56 [INFO] ./MathApp is running...
+2016/04/10 13:17:56 [asm_amd64.s:1998][I] http server Running on :8080
+To check the changes, visit http://localhost:8080/sum/4/5 in your browser. You should see something similar to the following:
+
+
+
+As you can see, your application was built and served automatically after saving these changes.
+
+Using Docker in Production
+This section will explain how to deploy a Go application in a Docker container. We will use Semaphore to do the following:
+
+Automatically build after changes are pushed to the git repository,
+Automatically run tests,
+Create a Docker image if the build is successful and if the tests pass,
+Push the Docker image to Docker Hub, and
+Update the server to use the latest Docker image.
+Creating a Dockerfile for Production
+During development, our directory had the following structure:
+
+MathApp
+├── conf
+│   └── app.conf
+├── main.go
+├── main_test.go
+└── views
+    ├── invalid-route.html
+    └── result.html
+Since we want to build a Docker image from the project, we need to create a Dockerfile that will be used in production. Create a Dockerfile in the root of the project. The new directory structure will look as follows:
+
+MathApp
+├── conf
+│   └── app.conf
+├── Dockerfile
+├── main.go
+├── main_test.go
+└── views
+    ├── invalid-route.html
+    └── result.html
+Enter the following contents in this Dockerfile:
+
+FROM golang:1.6
+
+# Create the directory where the application will reside
+RUN mkdir /app
+
+# Copy the application files (needed for production)
+ADD MathApp /app/MathApp
+ADD views /app/views
+ADD conf /app/conf
+
+# Set the working directory to the app directory
+WORKDIR /app
+
+# Expose the application on port 8080.
+# This should be the same as in the app.conf file
+EXPOSE 8080
+
+# Set the entry point of the container to the application executable
+ENTRYPOINT /app/MathApp
+Let's take a detailed look at what each of these commands does. The first command,
+
+FROM golang:1.6
+specifies that the image will be built on top of the same golang:1.6 image that we had used during development. The second command,
+
+RUN mkdir /app
+creates a directory named app in the root of the container. This is where we'll put our project files. The third set of commands,
+
+ADD MathApp /app/MathApp
+ADD views /app/views
+ADD conf /app/conf
+copies the binary, view folder and the configuration folder from the machine into the application folder in the image. The fourth command,
+
+WORKDIR /app
+sets the working directory in the image to /app. The fifth command,
+
+EXPOSE 8080
+exposes port 8080 from the container. This port should be identical to the one specified in the app.conf file of the application. The final command,
+
+ENTRYPOINT /app/MathApp
+sets the entry point of the image to our application's binary. This starts the binary and serves it on port 8080.
+
+Building and Testing Automatically
+Semaphore makes it trivial to automatically build and test your code as soon as you push it to your repository. Here's how to add your GitHub or Bitbucket project and set up a Golang project on Semaphore
+
+The default configuration for a Go project takes care of the following:
+
+Fetching the dependencies,
+Building the project, and
+Running the tests.
+Once you have completed this process, you'll be able to see the status of the latest builds and tests on your Semaphore dashboard. If either the build or the test fails, the process will be halted and nothing will be deployed.
+
+Creating the Initial Setup on Semaphore for Automatic Deployment
+Once you have set up the build process, the next step is to configure the deployment process. To deploy the application, we will need to:
+
+Build the Docker image,
+Push the Docker image to Docker Hub, and
+Update the server to pull this new image and start a new Docker container based on it.
+To begin, we need to set up our project on Semaphore to deploy continuously .
+
+The first three steps are relatively straightforward:
+
+Select the deployment method,
+Select the deployment strategy, and
+Choose the repository branch to use during deployment.
+For step 4 (setting the deploy commands), we'll use the commands from the next section. For the time being, leave this blank and move to the next step.
+
+In step 5, enter the private SSH key of the user of your server. This will allow some deployment commands to be executed securely on your server without the need for a password.
+
+In step 6, you can name your server. If you don't Semaphore will assign this server with a random name like server-1234.
+
+Setting Up the Update Script on Your Server
+Next, we are going to set up the deployment process so that Semaphore will build the new images and upload them to Docker Hub. Once this is done, a command from Semaphore will execute a script on your server to initiate the update process.
+
+To do this, we need to place the following file, named update.sh on your server.
+
+#!/bin/bash
+
+docker pull $1/ma-prod:latest
+if docker stop ma-app; then docker rm ma-app; fi
+docker run -d -p 8080:8080 --name ma-app $1/ma-prod
+if docker rmi $(docker images --filter "dangling=true" -q --no-trunc); then :; fi
+Make this file executable using the following command:
+
+chmod +x update.sh
+Let's take a look at how this file will be used. This script accepts a single parameter and uses the parameter in its commands. This parameter should be your username on Docker Hub. An example of using this command is as follows:
+
+./update.sh docker_hub_username
+Let's now take a look at each of the commands in the file to understand what they do.
+
+The first command,
+
+docker pull $1/ma-prod:latest
+pulls the latest image from Docker Hub to the server. If your username on Docker Hub is demo_user, this command will pull the image named demo_user/ma-prod that has been tagged as latest from Docker Hub.
+
+The second command,
+
+if docker stop ma-app; then docker rm ma-app; fi
+stops and removes any container that had previously been started with the name ma-app.
+
+The third command,
+
+docker run -d -p 8080:8080 --name ma-app $1/ma-prod
+starts a new container (named ma-app) that is based on the latest image which reflects the changes in the latest build.
+
+The final command,
+
+docker rmi $(docker images --filter "dangling=true" -q --no-trunc)
+removes any unused images from the server. This clean up keeps the server tidy and reduces disk usage.
+
+Note: This file must be placed in the home directory of the user whose SSH key was used in the previous step. If the location of the file is changed, the deployment command in the next section should be updated accordingly.
+
+Setting Up the Project to Work with Docker
+By default, new projects on Semaphore use the Ubuntu 14.04 LTS v1603 platform. This platform doesn't come with Docker. Since we are interested in using Docker, we need to change the platform settings in Semaphore to use the Ubuntu 14.04 LTS v1603 (beta with Docker support) platform.
+
+Setting Up the Environment Variables
+In order to use Docker Hub securely during the deployment process, we need to store our credentials in environment variables that Semaphore automatically initializes.
+
+We will store the following variables:
+
+DH_USERNAME - Docker Hub username
+DH_PASSWORD - Docker Hub password
+DH_EMAIL - Docker Hub email address
+Here's how you can set up environment variables in a secure manner.
+
+Setting Up the Deployment Commands
+While we have completed the initial setup, nothing will actually get deployed. The reason is that we had left the commands section empty.
+
+In the first step, we'll enter the commands that will complete the deployment process. To do this, go to your project homepage on Semaphore.
+
+
+
+On this page, click the name of the server under the Servers section. This should take you to:
+
+
+
+Click on the Edit server button which is located on the right side of the page, just below the header.
+
+
+
+On the following page, we are interested in the last section titled Deploy commands. Click the Change deploy commands link in this section to begin editing the commands.
+
+
+
+In the editable box, enter the following and click the Save Deploy Commands button:
+
+go get -v -d ./
+go build -v -o MathApp
+docker login -u $DH_USERNAME -p $DH_PASSWORD -e $DH_EMAIL
+docker build -t ma-prod .
+docker tag ma-prod:latest $DH_USERNAME/ma-prod:latest
+docker push $DH_USERNAME/ma-prod:latest
+ssh -oStrictHostKeyChecking=no your_server_username@your_ip_address "~/update.sh $DH_USERNAME"
+Note: Be sure to replace your_server_username@your_ip_address above with appropriate values.
+
+Let's now take a detailed look at what each of these commands does.
+
+The first two commands go get and go build are standard Go commands that fetch dependencies and build the project respectively. Note that the go build command specifies that the name of the executable should be MathApp. This name should be similar to the name used in the Dockerfile.
+
+The third command,
+
+docker login -u $DH_USERNAME -p $DH_PASSWORD -e $DH_EMAIL
+uses the environment variables (set up earlier) to authenticate with Docker Hub so that we can push the latest image. The fourth command,
+
+docker build -t ma-prod .
+builds a Docker image named ma-prod based on the latest codebase. The fifth command,
+
+docker tag ma-prod:latest $DH_USERNAME/ma-prod:latest
+tags the newly created image as your_docker_hub_username/ma-prod:latest. This is done so that we can push the image to the appropriate repository on Docker Hub. The sixth command,
+
+docker push $DH_USERNAME/ma-prod:latest
+pushes this image to Docker Hub. The final command,
+
+ssh -oStrictHostKeyChecking=no your_server_username@your_ip_address "~/update.sh $DH_USERNAME"
+uses the ssh command to log in on your server and execute the update.sh script that we had created in a previous step. This script fetches the latest image from Docker Hub and starts a new container based on that.
+
+Deploy the Application
+Since we haven't actually deployed the application to our server so far, let's do that manually. Note that you don't have to do this. The next time you push any changes to your repository, Semaphore will automatically deploy your application if the build and tests are successful. We are manually deploying it just to test if everything is working fine.
+
+You can see how to manually deploy an application from the build page in the Semaphore documentation
+
+Once you have deployed your application, access it at
+
+http://your_ip_address:8080/sum/4/5
+This should result in something like the following:
+
+
+
+This is identical to what we had during development. The only difference will be that instead of localhost, you'll have the IP address of your server in the URL.
+
+Testing the Setup
+Now that we have the automatic build and deployment processes set up, we'll see how it simplifies our workflow. Let's make a minor change and see how the application on our server updates automatically to reflect it.
+
+Let's try to change the color of the text from black to red. To do this, in the views/result.html file, change line #8 from
+
+    <body>
+to
+
+    <body style="color: red">
+Now, save the file. While in your application directory, commit the changes using the following commands:
+
+git add views/result.html
+git commit -m 'Change the color of text from black (default) to red'
+Push these changes to your repository using the following command:
+
+git push origin master
+As soon as the git push command completes, Semaphore will detect the change in your repository and start the build process automatically. Once the build process (including the tests) completes successfully, Semaphore will begin the deployment process. The Semaphore dashboard displays the status of the build and deployment processes in real time.
+
+Once the Semaphore dashboard indicates that the build and deployment processes have been completed, refresh your page at
+
+http://your_ip_address:8080/sum/4/5
+You should now see something similar to the following:
+
+
+
+Conclusion
+In this tutorial, we learned how to create a Docker container for a Go application and deploy a Docker container to a server using Semaphore.
+
+You should now be ready to use Docker to simplify the deployment of your next Go application. If you have any questions, feel free to post them in the comments below.
+
+P.S. Want to continuously deliver your applications made with Docker? Check out Semaphore’s Docker support.
+
+Read next:
+
+Sign up to receive a free ebook guide to CI/CD with Kubernetes
+Lightweight Docker Images in 5 Steps
+Continuous Deployment with Google Container Engine and Kubernetes
+Creating a Heroku-like Deployment Solution with Docker
+
+Kulshekhar Kabra
+Kulshekhar is an independent full stack engineer with 10+ years of experience in designing, developing, deploying and maintaining web applications.
+
+  1
+Set up continuous integration and delivery for your project in a minute.
+Fast. Scalable. Easy to use.
+
+You May Also Like
+Running Applications on a Docker Swarm Mode Cluster
+How to Deploy Rails Applications With Ansible, Capistrano and Semaphore
+Updating Services in a Docker Swarm Mode Cluster
+18 comments on this tutorial so far. Subscribe to new comments
+	
+quick  Apr 15 2016 04:28 pm
+It's not working for me. Any suggestions what I might be doing wrong here?
+
+bash-4.3$ docker run -it --rm --name ma-instance -p 8080:8080 -v /apps/MathApp:/go/src/MathApp -w /go/src/MathApp ma-image bee :1.4.1 beego :1.6.1 Go :go version go1.6.1 linux/amd64
+
+2016/04/15 16:26:08 [INFO] Uses 'MathApp' as 'appname' 2016/04/15 16:26:08 [INFO] Initializing watcher... 2016/04/15 16:26:08 [INFO] Start building... can't load package: package MathApp: no buildable Go source files in /go/src/MathApp 2016/04/15 16:26:08 [ERRO] ============== Build failed ===================
+
+	
+k AUTHOR  Apr 15 2016 05:00 pm
+@quick - on your development machine, is the source code placed inside the /apps/MathApp directory? If not, you'll have to change the value of the -v flag such that the part before the : points to the directory with the source code on your machine (-v path_to_source_directory:/go/src/MathApp).
+
+Edited on Apr 15 2016 05:02 pm
+
+	
+quick  Apr 15 2016 05:14 pm
+@k Thanks that was it. I hadn't realised I needed to copy the source code in there. It's working now.
+
+bash-4.3$ docker run -it --rm --name ma-instance -p 8080:8080 -v /apps/MathApp:/go/src/MathApp -w /go/src/MathApp ma-image bee :1.4.1 beego :1.6.1 Go :go version go1.6.1 linux/amd64
+
+2016/04/15 17:11:39 [INFO] Uses 'MathApp' as 'appname' 2016/04/15 17:11:39 [INFO] Initializing watcher... 2016/04/15 17:11:39 [TRAC] Directory(/go/src/MathApp) 2016/04/15 17:11:39 [INFO] Start building... 2016/04/15 17:11:41 [SUCC] Build was successful 2016/04/15 17:11:41 [INFO] Restarting MathApp ... 2016/04/15 17:11:41 [INFO] ./MathApp is running... 2016/04/15 17:11:41 [asm_amd64.s:1998][I] http server Running on :8080 2016/04/15 17:12:29 [router.go:829][D] | GET | /sum/4/5 | 554.183µs | match | /:operation/:num1:int/:num2:int |
+
+	
+k AUTHOR  Apr 15 2016 05:16 pm
+@quick glad I could help :)
+
+	
+quick  Apr 15 2016 08:47 pm
+Hi @k,
+
+I've got further but am getting an error with the update.sh script and the deploy is failing. Could you help me out again please?
+
+Semaphore: ~ $ ./update.sh equick latest: Pulling from equick/ma-prod efd26ecc9548: Already exists a3ed95caeb02: Already exists d1784d73276e: Already exists 72e581645fc3: Already exists 01ce90e06b06: Already exists 666886c80650: Already exists 2b9aef313bfc: Already exists a47658d1602e: Already exists 2b963c13b835: Already exists c53f918d33e7: Already exists 9bce596df68a: Already exists 656f4173d3ab: Already exists Digest: sha256:8b61b94d8c0b82bbe54bb7a2fbaffba3ebd0fbdafa4d149eb7e51fc77c3b8830 Status: Image is up to date for equick/ma-prod:latest ma-app ma-app 24ac350dc5334627f0ef901a35350d34f6a264c1344009774473b7ee857b8463 docker: "rmi" requires a minimum of 1 argument. See 'docker rmi --help'.
+
+Usage: docker rmi [OPTIONS] IMAGE [IMAGE...]
+
+Remove one or more images Semaphore: ~ $
+
+Semaphore: ~ $ docker images REPOSITORY TAG IMAGE ID CREATED SIZE equick/ma-prod latest c69e8bf37bba 7 minutes ago 757.3 MB Semaphore: ~ $ docker images --filter "dangling=true" -q --no-trunc Semaphore: ~ $
+
+	
+k AUTHOR  Apr 16 2016 03:42 am
+@quick
+
+That problem has occurred because this command is trying to remove images when there aren't any. I'll try to update the tutorial as soon as I can. For the time being, in update.sh, replace
+
+docker rmi $(docker images --filter "dangling=true" -q --no-trunc)
+on the last line with
+
+if docker rmi $(docker images --filter "dangling=true" -q --no-trunc); then :; fi
+This wraps the command in an if condition and prevents the whole script from failing even if this command does.
+
+	
+quick  Apr 16 2016 08:44 am
+@k thanks again. The line you suggested didn't work but I got round it with this:
+
+unused_images=$(docker images --filter "dangling=true" -q --no-trunc)
+[[ "$unused_images" != "" ]] && docker rmi "$unused_images"
+Also I noticed today that the server's ip has changed. In your deploy code you have:
+
+ssh -oStrictHostKeyChecking=no your_server_username@your_ip_address "~/update.sh $DH_USERNAME"
+I tried changing the ip address to the server name I chose but this doesn't resolve. I'll check the docs again in case I'm missing something, but otherwise do you know how to fix this so I don't have to keep updating the ip?
+
+Edited on Apr 16 2016 08:55 am
+
+	
+k AUTHOR  Apr 16 2016 09:28 am
+@quick If your server doesn't have a static IP address, you can use a domain name instead. So instead of your_server_username@your_ip_address, you can use your_server_username@your_domain_name
+
+This is similar to how you would access a website.
+
+	
+quick  Apr 16 2016 09:33 am
+@k thanks understood now - we need to use our own servers. For some reason I was thinking the server was provided by Semaphore.
+
+	
+myth0s  Apr 23 2016 09:10 pm
+The live reload isn't working for me.
+
+I see in the container's log that Bee is starting a watcher (2016/04/23 21:00:49 [INFO] Initializing watcher...), but no matter how much I modify the main.go file, I don't get the "MODIFY" event as you do.
+
+I've checked the /go/src/MathApp directory, and I see that main.go's modification timestamp changes (when I change the file). I've also checked my Dockerfile and the -w parameter is set correctly. I even tried the watchall argument: CMD ["bee", "run", "watchall"], to no avail.
+
+Any suggestions?
+
+Edited on Apr 23 2016 09:32 pm
+
+	
+k AUTHOR  Apr 24 2016 05:47 am
+@myth0s would it be possible for you to share your setup somehow? It'll be difficult to determine the cause of the problem otherwise.
+
+	
+myth0s  Apr 24 2016 03:01 pm
+@k Here's the code I have: https://github.com/aleveille/MathApp
+
+I'm using the following command to launch the container docker run -it --rm --name ma-instance -p 8080:8080 -v /Users/alexandreleveille/git/MathApp:/go/src/MathApp -w /go/src/MathApp ma-image
+
+Inside the container:
+
+$ go env
+
+GOARCH="amd64" GOBIN="" GOEXE="" GOHOSTARCH="amd64" GOHOSTOS="linux" GOOS="linux" GOPATH="/go" GORACE="" GOROOT="/usr/local/go" GOTOOLDIR="/usr/local/go/pkg/tool/linux_amd64" GO15VENDOREXPERIMENT="1" CC="gcc" GOGCCFLAGS="-fPIC -m64 -pthread -fmessage-length=0" CXX="g++" CGO_ENABLED="1"
+
+$ bee version
+
+bee :1.4.1 beego :1.6.1 Go :go version go1.6.2 linux/amd64
+
+$ df | grep -i math
+
+Users 418617628 410205052 8412576 98% /go/src/MathApp
+
+$ ps aux
+
+USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND root 1 0.0 0.9 116600 9696 ? Ssl+ 14:57 0:00 bee run root 25 0.0 0.8 110656 8872 ? Sl+ 14:57 0:00 ./MathApp root 29 0.0 0.3 20248 3200 ? Ss 14:58 0:00 bash root 55 0.0 0.1 17500 1984 ? R+ 15:00 0:00 ps aux
+
+$ pwd
+
+/go/src/MathApp
+
+Anything in there seems wrong? :S
+
+Edited on Apr 24 2016 03:02 pm
+
+	
+k AUTHOR  Apr 24 2016 07:50 pm
+@myth0s I just tried the whole thing with a fresh VM using your github repo and it all works just fine. So no problems with the code you're using.
+
+I launched the container using the same command as you pasted above (with just the source directory changed from /Users/alexandreleveille/git/MathApp to /app/MathApp). After launching the container, when I change main.go and save it, I can see that the app is being rebuilt and served automatically. I can't quite figure out why it's not working in your case.
+
+	
+myth0s  Apr 25 2016 04:44 pm
+@k Thanks for taking the time to validate all this!
+
+Based on your comment, I figured the problem could be with the inotify. So I did a bit on research and it turns out that these notifications don't work for people running their docker-machine in a VM: https://github.com/docker/docker/issues/18246
+
+Basically, everyone using MacOS or Windows will run into this problem, unless they are already aware of this limitation and know that Bee relies on inotify - which is unlikely for someone just "using" Docker.
+
+There's a few ways to workaround this. One being this: https://github.com/brikis98/docker-osx-dev Another would be to git clone the code inside the docker-machine and link a folder on the developper host to that folder on the docker machine (I assume doing so, the docker machine will pickup changes firsthand and will trigger fs events). I'll try those solutions tonight.
+
+Good luck all!
+
+	
+xanderdwyl  Aug 19 2016 03:59 pm
+Bee does not support non Beego project: /go/src/mathapp
+
+	
+k AUTHOR  Aug 20 2016 09:35 am
+@xanderdwyl That's true. It used to work with an earlier version but doesn't seem to be working now. A quick and dirty solution to this would be to place
+
+import (
+    .
+    .
+    // "github.com/astaxie/beego"
+)
+in your main.go file.
+
+The better solution would be to use another live reloader (for example, https://github.com/codegangsta/gin, https://github.com/omeid/go-livereload) and modify the Docker file to use this reloader instead of bee in the last line.
+
+Please note that I haven't used either of these two but I see no reason why these shouldn't work
+
+Edited on Aug 20 2016 09:51 am
+
+	
+darthmowzy  Oct 2 2016 07:06 am
+@xanderdwyl when running docker run make sure the path to your project is set correctly in the -v flag
+
+docker run -it --rm --name ma-instance -p 8080:8080 -v {the_actual_path_to_your_project_goes_here}:/go/src/MathApp -w /go/src/MathApp ma-image
+
+	
+yadavkkumar  Jun 6 2017 05:09 am
+I am getting a error like this.
+
+/app/MathApp$ docker build -t ma-image . Sending build context to Docker daemon 10.24 kB Step 1/4 : FROM golang:1.6 ---> 63330314bb46
+
+Step 2/4 : RUN go get github.com/astaxie/beego && go get github.com/beego/bee ---> Running in 7181c8552b6e
+
+cd .; git clone https://github.com/astaxie/beego /go/src/github.com/astaxie/beego
+Cloning into '/go/src/github.com/astaxie/beego'... fatal: unable to access 'https://github.com/astaxie/beego/': Could not resolve host: github.com
+
+package github.com/astaxie/beego: exit status 128 The command '/bin/sh -c go get github.com/astaxie/beego && go get github.com/beego/bee' returned a non-zero code: 128
+
+Suggest me how to resolve it.
+
+Edited on Jun 6 2017 05:11 am
+
+You must be logged in to comment.
+
+This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License
+
+SUBSCRIBE TO OUR NEWSLETTER
+
+Enter your email address
+
+© 2009-2019 Rendered Text. All rights reserved.
+
+SEMAPHORE
+Homepage
+Product
+CI/CD for Docker
+Customers
+Pricing
+Changelog
+RESOURCES
+Contact us
+Documentation
+Tutorials
+Blog
+API
+Status
+ABOUT
+Our story
+Careers
+Company
+Terms
+Privacy
+Security
